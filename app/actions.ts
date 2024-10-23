@@ -5,6 +5,7 @@ import { createClient } from "@/utils/supabase/server";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+
 export const signUpAction = async (formData: FormData) => {
   const email = formData.get("email")?.toString();
   const password = formData.get("password")?.toString();
@@ -15,7 +16,8 @@ export const signUpAction = async (formData: FormData) => {
     return { error: "Email and password are required" };
   }
 
-  const { error } = await supabase.auth.signUp({
+  // Sign up the user
+  const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -23,16 +25,43 @@ export const signUpAction = async (formData: FormData) => {
     },
   });
 
-  if (error) {
-    console.error(error.code + " " + error.message);
-    return encodedRedirect("error", "/sign-up", error.message);
-  } else {
+  if (signUpError) {
+    console.error(signUpError.code + " " + signUpError.message);
+    return encodedRedirect("error", "/sign-up", signUpError.message);
+  }
+
+  const user = signUpData?.user;
+
+  // Check if we got the user after sign-up
+  if (user) {
+    // Insert a new profile with default values
+    const { error: profileError } = await supabase
+      .from("profiles")
+      .insert([
+        {
+          id: user.id,               // Set the user ID as the profile ID (this is the auth.uid())
+          email: user.email,         // Add the user's email to the profile
+          role: "employee",          // Default role
+          authorization_status: "not authorized",  // Default status
+        },
+      ]);
+
+    // Handle any errors while inserting the profile
+    if (profileError) {
+      console.error(profileError.message);
+      return encodedRedirect("error", "/sign-up", "Profile creation failed.");
+    }
+
+    // Continue with the success message and redirect
     return encodedRedirect(
       "success",
       "/sign-up",
-      "Thanks for signing up! Please check your email for a verification link.",
+      "Thanks for signing up! Please check your email for a verification link."
     );
   }
+
+  // If something went wrong and we don't have a user
+  return encodedRedirect("error", "/sign-up", "User creation failed.");
 };
 
 export const signInAction = async (formData: FormData) => {
@@ -127,4 +156,34 @@ export const signOutAction = async () => {
   const supabase = createClient();
   await supabase.auth.signOut();
   return redirect("/sign-in");
+};
+
+
+export const saveTransactionAction = async (formData: any) => {
+  const supabase = createClient();
+
+  // Capture form data from the frontend
+  const { customer_name, type_of_sale, product, quantity, unit_of_measure, unit_price, total_price } = formData;
+
+  const userId = "some-user-id";  // Retrieve user_id from session (you will need to implement this)
+  const companyName = "some-company";  // Get company name from the user profile (implement this)
+
+  const { error } = await supabase.from("transactions").insert({
+    customer_name,
+    type_of_sale,
+    product,
+    quantity: Number(quantity),
+    unit_of_measure,
+    unit_price: Number(unit_price),
+    total_price: Number(total_price),
+    user_id: userId,
+    company_name: companyName,
+  });
+
+  if (error) {
+    console.error("Supabase insert error:", error.message);
+    return { error: "Failed to save transaction" };
+  }
+
+  return { success: "Transaction saved successfully" };
 };
